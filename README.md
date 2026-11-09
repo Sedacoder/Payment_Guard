@@ -63,3 +63,130 @@ The administrative engine incorporates an enterprise telemetry dashboard powered
 - **Supabase Backend:** Stores verified commercial identity registries, historical risk vectors, and immutable audit logs.
 - **Model Context Protocol (MCP) Agent Layer:** Executes structural zero-ops runtime checks against payment payloads.
 - **AG Grid Telemetry Engine:** Provides high-throughput monitoring and dynamic threat visualization for merchant operations.
+
+---
+
+## What runs today
+
+The demo is **mock-first**: it runs end to end with no Supabase, PayPal or Anthropic credentials. Real integrations sit behind adapter seams so they can be switched on later without changing the UI or the guard contract.
+
+| Layer | Implemented now | Production seam |
+| --- | --- | --- |
+| Guard rules | Deterministic engine in `lib/verdict.ts` + `lib/nameSimilarity.ts` | — |
+| AI advisory | Optional Claude tool-calling pass in `lib/agent.ts` | Enabled by `ANTHROPIC_API_KEY` |
+| Payment rail | In-memory mock rail in `lib/payment-rail.ts` | `PAYMENT_RAIL=paypal` → `lib/paypal-rail.ts` |
+| Telemetry | In-memory sink + Server-Sent Events | Swap for Supabase Realtime |
+| Dashboard | AG Grid console at `/dashboard` | — |
+| Terminal | Guarded checkout at `/terminal` | — |
+
+### Pages
+
+- `/` — landing page and architecture summary.
+- `/terminal` — customer checkout: submit payee, email and amount; renders BLOCK, WARN (with confirmation), or ALLOW with a QR hand-off and simulated capture.
+- `/dashboard` — admin SOC console: live AG Grid telemetry, verdict filters, search, risk scores, rule flags and guard latency.
+
+### API routes
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `/api/intercept-payment` | POST | Evaluate a payment and return a verdict without creating an order. |
+| `/api/create-order` | POST | Evaluate, then create a payment order. BLOCK → `403`; WARN → `requiresConfirmation` until `confirmed: true`. |
+| `/api/capture-order` | POST | Capture a created order (mock rail by default). |
+| `/api/merchants` | GET | Verified merchant registry. |
+| `/api/telemetry` | GET | Current telemetry snapshot. |
+| `/api/telemetry/stream` | GET | SSE snapshot + live events. |
+
+`POST` bodies use `{ "payeeName": string, "targetEmail": string, "transactionAmount": number }`. `create-order` additionally accepts `currency` (ISO 4217) and `confirmed` (boolean).
+
+### Verdict policy
+
+- **BLOCK** — payee is not in the verified registry. If the name is more than 80% similar to a verified merchant, the response includes a `Did you mean …?` suggestion.
+- **WARN** — verified merchant, but the amount is more than 5x its typical amount. Requires explicit confirmation.
+- **ALLOW** — verified merchant with matching email and a normal amount.
+
+The deterministic engine is the floor. The optional AI advisory can only escalate a verdict (`combineVerdicts`), never downgrade it. Prompt-injection tails in a payee name are stripped before similarity comparison, so injected text cannot hide a look-alike brand.
+
+---
+
+## Getting started
+
+```bash
+npm install
+npm run dev
+```
+
+Open <http://localhost:3000>. Everything works with zero configuration.
+
+### Scripts
+
+```bash
+npm run dev        # Next.js dev server
+npm run build      # production build
+npm run start      # serve the production build
+npm run lint       # ESLint
+npm run typecheck  # tsc --noEmit
+npm test           # Vitest (rule engine, injection handling, agent escalation)
+```
+
+### Environment variables
+
+All variables are optional for the mock demo. See `.env.example`.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PAYMENT_RAIL` | `mock` | Set to `paypal` to use the PayPal Sandbox adapter. |
+| `ANTHROPIC_API_KEY` | unset | Enables the AI advisory pass. Without it, the rule engine runs alone. |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-5` | Model used for advisory checks. |
+| `PAYMENT_GUARD_AI` | unset | Set to `off` to force rules-only mode. |
+| `PAYPAL_CLIENT_ID` | unset | Required for `PAYMENT_RAIL=paypal`. |
+| `PAYPAL_CLIENT_SECRET` | unset | Required for `PAYMENT_RAIL=paypal`. |
+| `PAYPAL_API_BASE` | `https://api-m.sandbox.paypal.com` | PayPal API host. |
+| `PAYPAL_CURRENCY` | `USD` | Currency used when the PayPal rail is active (PayPal does not settle KES). |
+| `NEXT_PUBLIC_SUPABASE_URL` | unset | Reserved for the future Supabase telemetry adapter. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | unset | Reserved for the future Supabase telemetry adapter. |
+
+---
+
+## Demo script
+
+1. Open `/terminal` and choose **Cloned terminal** (`Naivaz` + a prompt-injection tail) → **BLOCK**, similarity `0.833`, “Did you mean Naivas Supermarket?”.
+2. Choose **Legitimate merchant** → **ALLOW**, order created, QR shown. Click **Simulate customer approval & capture** → `COMPLETED`.
+3. Choose **Amount spike** (`20,000` vs `2,500` typical) → **WARN**, then **Confirm and continue** → order and capture.
+4. Open `/dashboard` in a second tab. Each terminal action appears live over SSE; filter by verdict, search by payee, email or rule flag.
+5. Inspect the seeded feed: the eight shipped mock exploits plus the demo WARN case.
+
+---
+
+## Project structure
+
+```
+app/
+  page.tsx                     landing page
+  terminal/page.tsx            customer terminal
+  dashboard/page.tsx           admin console shell
+  api/                         intercept, orders, merchants, telemetry, SSE
+components/
+  SecurityDashboard.tsx        AG Grid console with live SSE ingestion
+lib/
+  types.ts                     shared GuardInput / GuardResult contract
+  verdict.ts                   deterministic verdict rules
+  nameSimilarity.ts            normalization + Levenshtein similarity
+  lookupMerchant.ts            verified merchant registry
+  validation.ts                strict request validation
+  agent.ts                     optional AI advisory + stricter-verdict combining
+  intercept.ts                 shared guarded evaluation + telemetry
+  telemetry.ts                 in-memory sink and record shaping
+  telemetry-seed.ts            seeded demo feed
+  payment-rail.ts              mock rail + rail selection
+  paypal-rail.ts               PayPal Sandbox adapter
+tests/                         Vitest suites
+```
+
+---
+
+## Notes and limitations
+
+- Telemetry is per-process and in-memory: it resets when the server restarts and is not shared across serverless instances. The `TelemetryRecord` shape already matches the planned Supabase table.
+- The mock rail stores orders in memory. The PayPal adapter is wired but untested without sandbox credentials.
+- The AI advisory is advisory only: it holds no payment keys and cannot move funds or write to the database.
+- Sandbox money only — no real funds move.
