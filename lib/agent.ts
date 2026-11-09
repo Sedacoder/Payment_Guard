@@ -231,7 +231,8 @@ export async function runAiAdvisory(input: GuardInput): Promise<GuardResult | nu
   return null;
 }
 
-function buildFlags(input: GuardInput, rule: GuardResult, advisory: GuardResult | null): string[] {
+/** Rule-derived flags, shared with the telemetry seeder. */
+export function deriveRuleFlags(input: GuardInput, rule: GuardResult): string[] {
   const flags: string[] = [];
 
   if (rule.reason === "Invalid payment details.") {
@@ -244,11 +245,16 @@ function buildFlags(input: GuardInput, rule: GuardResult, advisory: GuardResult 
   if (looksLikePromptInjection(input.payeeName) || looksLikePromptInjection(input.targetEmail)) {
     flags.push("PROMPT_INJECTION_SUSPECTED");
   }
+
+  return flags;
+}
+
+function buildFlags(input: GuardInput, rule: GuardResult, advisory: GuardResult | null): string[] {
+  const flags = deriveRuleFlags(input, rule);
   if (advisory) {
     flags.push("AI_ADVISORY");
     if (advisory.verdict !== rule.verdict) flags.push("AI_ESCALATED");
   }
-
   return flags;
 }
 
