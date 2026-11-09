@@ -1,17 +1,21 @@
-export default function MerchantDashboardPage() {
-  return (
-    <main className="min-h-screen bg-gray-900 text-white p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <div className="h-8 bg-gray-800 rounded w-64 animate-pulse"></div>
-          <div className="h-10 bg-gray-800 rounded w-32 animate-pulse"></div>
-        </div>
+"use client";
 
-        {/* Skeletal Data Table View */}
-        <div className="w-full h-96 bg-gray-800 rounded-xl flex items-center justify-center border border-gray-700 animate-pulse">
-          <p className="text-gray-400 text-sm font-medium">Enterprise Monitoring Table Grid Initializing...</p>
-        </div>
+import dynamic from "next/dynamic";
+
+const SecurityDashboard = dynamic(() => import("@/components/SecurityDashboard"), {
+  ssr: false,
+  loading: () => (
+    <main className="flex min-h-screen items-center justify-center bg-[#070d18]">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-800 border-t-emerald-400" />
+        <p className="text-xs font-semibold tracking-wide text-slate-500">
+          Initializing telemetry console…
+        </p>
       </div>
     </main>
-  );
+  ),
+});
+
+export default function MerchantDashboardPage() {
+  return <SecurityDashboard />;
 }
