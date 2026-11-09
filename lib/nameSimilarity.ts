@@ -14,6 +14,19 @@ const FILLER_WORDS: ReadonlySet<string> = new Set([
   "official",
 ]);
 
+/**
+ * An attacker can append instructions to a payee name to try to hide a
+ * look-alike brand. Cut the payload at the first instruction marker so the
+ * legitimate prefix ("Naivaz Supermarket") is still compared.
+ */
+const INJECTION_MARKER =
+  /(\bignore\b|\bsystem\s*:|\bdeveloper\s*:|\boverride\b|\breturn\s*\{|\bset\s+verdict\b|\byou\s+are\s+now\b|\bjailbreak\b)/i;
+
+function stripInjectionTail(name: string): string {
+  const match = INJECTION_MARKER.exec(name);
+  return match ? name.slice(0, match.index) : name;
+}
+
 /** Lowercase, drop punctuation, split into words. */
 function tokenize(name: string): string[] {
   return name
@@ -25,7 +38,7 @@ function tokenize(name: string): string[] {
 
 /** Cleaned name used for comparison. Falls back to all words if stripping empties it. */
 export function normalizeName(name: string): string {
-  const words = tokenize(name);
+  const words = tokenize(stripInjectionTail(name));
   const core = words.filter((w) => !FILLER_WORDS.has(w));
   return (core.length > 0 ? core : words).join(" ");
 }
