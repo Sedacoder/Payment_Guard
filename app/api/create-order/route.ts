@@ -1,71 +1,117 @@
-import { NextResponse } from 'next/server';
+import { connection } from "next/server";
+import QRCode from "qrcode";
 
-/**
- * Internal helper to query PayPal's OAuth server for a temporary secure access token
- */
-async function generatePayPalAccessToken() {
-  const clientId = process.env.PAYPAL_CLIENT_ID;
-  const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+import { linkAuditToOrder } from "@/lib/audit-store";
+import { interceptPayment } from "@/lib/intercept";
+import { getPaymentRail } from "@/lib/payment-rail";
+import { getClientIp } from "@/lib/request-meta";
+import { parseGuardInput } from "@/lib/validation";
 
-  if (!clientId || !clientSecret) {
-    throw new Error('Missing client_id or client_secret variables in .env.local');
+const CURRENCY_PATTERN = /^[A-Z]{3}$/;
+
+export async function POST(request: Request) {
+  await connection();
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ success: false, error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const authString = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const response = await fetch('https://paypal.com', {
-    method: 'POST',
-    body: 'grant_type=client_credentials',
-    headers: {
-      Authorization: `Basic ${authString}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-  });
+  const parsed = parseGuardInput(body);
+  if (!parsed.ok) {
+    return Response.json({ success: false, error: parsed.error }, { status: 400 });
+  }
 
-  const data = await response.json();
-  return data.access_token;
-}
+  const raw = body as Record<string, unknown>;
+  const confirmed = raw.confirmed === true;
+  const requestedCurrency =
+    typeof raw.currency === "string" ? raw.currency.toUpperCase() : undefined;
+  if (requestedCurrency && !CURRENCY_PATTERN.test(requestedCurrency)) {
+    return Response.json(
+      { success: false, error: "currency must be a three-letter ISO code." },
+      { status: 400 },
+    );
+  }
 
-/**
- * PAYPAL ORDERS INTERFACE
- * Generates an active session invoice token directly inside the PayPal Sandbox system.
- */
-export async function POST(request: Request) {
+  const currency =
+    requestedCurrency ??
+    (process.env.PAYMENT_RAIL === "paypal"
+      ? (process.env.PAYPAL_CURRENCY ?? "USD")
+      : "KES");
+
   try {
-    const { amount } = await request.json();
-
-    // 1. Generate active bearer authentication token
-    const accessToken = await generatePayPalAccessToken();
-
-    // 2. Dispatch standardized purchase properties to the PayPal sandbox platform
-    const response = await fetch('https://paypal.com', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        intent: 'CAPTURE',
-        purchase_units: [
-          {
-            amount: {
-              currency_code: 'USD',
-              value: amount.toString(),
-            },
-          },
-        ],
-      }),
+    const { result, telemetry } = await interceptPayment(parsed.input, {
+      ipAddress: getClientIp(request),
+      currency,
     });
 
-    const orderData = await response.json();
+    const assessment = {
+      verdict: result.verdict,
+      reason: result.reason,
+      suggestion: result.suggestion ?? null,
+      similarity: result.similarity ?? null,
+      riskScore: telemetry.risk_score,
+      flags: result.flags,
+      aiUsed: result.aiUsed,
+      latencyMs: result.latencyMs,
+      telemetryId: telemetry.id,
+    };
 
-    if (!response.ok) {
-      return NextResponse.json({ error: 'PayPal engine rejected checkout compilation' }, { status: response.status });
+    if (result.verdict === "BLOCK") {
+      return Response.json(
+        {
+          success: false,
+          action: "BLOCK",
+          message: `Security Intercept: ${result.reason}`,
+          reason: result.reason,
+          assessment,
+        },
+        { status: 403 },
+      );
     }
 
-    return NextResponse.json({ id: orderData.id, status: orderData.status }, { status: 200 });
+    if (result.verdict === "WARN" && !confirmed) {
+      return Response.json({
+        success: true,
+        action: "WARN",
+        requiresConfirmation: true,
+        message: result.reason,
+        reason: result.reason,
+        assessment,
+      });
+    }
 
-  } catch (error: any) {
-    console.error(`[PayPal Rail Panic] ${error.message}`);
-    return NextResponse.json({ error: 'Internal payment rail failure' }, { status: 500 });
+    const rail = await getPaymentRail();
+    const order = await rail.createOrder(parsed.input, currency);
+
+    // The PayPal webhook and the mock capture path update the audit row by
+    // order id, so link the decision to the order as soon as it exists.
+    await linkAuditToOrder(telemetry.id, order.id);
+
+    const approvalUrl = order.approvalUrl.startsWith("http")
+      ? order.approvalUrl
+      : `${new URL(request.url).origin}${order.approvalUrl}`;
+    const qrDataUrl = await QRCode.toDataURL(approvalUrl, {
+      width: 320,
+      margin: 1,
+      color: { dark: "#0f172a", light: "#ffffff" },
+    });
+
+    return Response.json({
+      success: true,
+      action: result.verdict,
+      confirmed: result.verdict === "WARN" ? confirmed : undefined,
+      message: result.reason,
+      reason: result.reason,
+      assessment,
+      order,
+      approvalUrl,
+      qrDataUrl,
+    });
+  } catch (error) {
+    console.error("[payment-guard] create order failed:", error);
+    return Response.json({ success: false, error: "Could not create payment order." }, { status: 500 });
   }
 }

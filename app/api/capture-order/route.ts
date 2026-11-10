@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 
+import { markAuditCaptured } from "@/lib/audit-store";
 import { getPaymentRail } from "@/lib/payment-rail";
 
 export async function POST(request: Request) {
@@ -24,6 +25,10 @@ export async function POST(request: Request) {
   try {
     const rail = await getPaymentRail();
     const order = await rail.captureOrder(orderId);
+
+    // Reflect the completed payment on the dashboard's audit row.
+    await markAuditCaptured(order.id, "Payment captured and confirmed by the payment rail.");
+
     return Response.json({ success: true, order });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not capture payment order.";

@@ -1,23 +1,29 @@
-import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/dbConnection';
+import { connection } from "next/server";
 
+import { listAuditRecords } from "@/lib/audit-store";
+import { listTelemetry, type TelemetryRecord } from "@/lib/telemetry";
+import { seedTelemetry } from "@/lib/telemetry-seed";
+
+function mergeRecords(local: TelemetryRecord[], remote: TelemetryRecord[]): TelemetryRecord[] {
+  const byId = new Map<string, TelemetryRecord>();
+  for (const record of local) byId.set(record.id, record);
+  for (const record of remote) byId.set(record.id, record);
+  return Array.from(byId.values())
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, 500);
+}
 
 export async function GET() {
-  try {
-    const { data, error } = await supabase
-      .from('security_audits')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(100);
+  // Cache Components would otherwise be free to prerender this snapshot.
+  await connection();
+  await seedTelemetry();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+  const local = listTelemetry(500);
+  const remote = await listAuditRecords(500);
 
-    // Return object wrapping an array matching Tallam's expected JSON format
-    return NextResponse.json({ records: data || [] }, { status: 200 });
-
-  } catch (error: any) {
-    return NextResponse.json({ error: 'Telemetry retrieval failed' }, { status: 500 });
-  }
+  return Response.json({
+    records: mergeRecords(local, remote),
+    source: remote.length > 0 ? "supabase+memory" : "memory",
+    serverTime: new Date().toISOString(),
+  });
 }
