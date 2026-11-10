@@ -1,7 +1,9 @@
 import type { PaymentOrder, PaymentRail } from "./payment-rail";
 import type { GuardInput } from "./types";
 
-const API_BASE = process.env.PAYPAL_API_BASE ?? "https://api-m.sandbox.paypal.com";
+export const PAYPAL_API_BASE =
+  process.env.PAYPAL_API_BASE ?? "https://api-m.sandbox.paypal.com";
+const API_BASE = PAYPAL_API_BASE;
 
 interface PayPalLink {
   href: string;
@@ -31,6 +33,10 @@ const globalState = globalThis as typeof globalThis & {
 };
 const createdOrders = globalState.__paymentGuardPayPalOrders ?? new Map<string, PaymentOrder>();
 globalState.__paymentGuardPayPalOrders = createdOrders;
+
+export async function getPayPalAccessToken(): Promise<string> {
+  return getAccessToken();
+}
 
 async function getAccessToken(): Promise<string> {
   const cached = globalState.__paymentGuardPayPalToken;
@@ -96,6 +102,9 @@ export class PayPalSandboxRail implements PaymentRail {
         application_context: {
           brand_name: "Payment Guard",
           user_action: "PAY_NOW",
+          // PayPal appends ?token=<orderId>&PayerID=... to the return URL.
+          return_url: `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/pay/complete`,
+          cancel_url: `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/terminal?cancelled=1`,
         },
       }),
     });
