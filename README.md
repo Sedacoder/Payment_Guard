@@ -59,7 +59,7 @@ The administrative engine incorporates an enterprise telemetry dashboard powered
 
 ## Core System Components
 
-- **Next.js API Infrastructure:** Handles server-side transaction routes, HMAC payload verification, and standard rail bindings.
+- **Next.js API Infrastructure:** Handles server-side transaction routes, PayPal webhook signature verification, and standard rail bindings.
 - **Supabase Backend:** Stores verified commercial identity registries, historical risk vectors, and immutable audit logs.
 - **Model Context Protocol (MCP) Agent Layer:** Executes structural zero-ops runtime checks against payment payloads.
 - **AG Grid Telemetry Engine:** Provides high-throughput monitoring and dynamic threat visualization for merchant operations.
@@ -74,15 +74,23 @@ The demo is **mock-first**: it runs end to end with no Supabase, PayPal or Anthr
 | --- | --- | --- |
 | Guard rules | Deterministic engine in `lib/verdict.ts` + `lib/nameSimilarity.ts` | — |
 | AI advisory | Optional Claude tool-calling pass in `lib/agent.ts` | Enabled by `ANTHROPIC_API_KEY` |
+| Merchant registry | Seeded in-memory registry in `lib/lookupMerchant.ts` | Supabase `verified_merchants` when env is set |
 | Payment rail | In-memory mock rail in `lib/payment-rail.ts` | `PAYMENT_RAIL=paypal` → `lib/paypal-rail.ts` |
-| Telemetry | In-memory sink + Server-Sent Events | Swap for Supabase Realtime |
+| Telemetry | In-memory sink + Server-Sent Events | Supabase `security_audits` + Realtime, SSE fallback |
 | Dashboard | AG Grid console at `/dashboard` | — |
 | Terminal | Guarded checkout at `/terminal` | — |
+
+Supabase is an **adapter, not a requirement**. With no credentials the app uses the
+seeded registry and the in-memory sink. With credentials it reads the registry from
+`verified_merchants`, writes audit rows to `security_audits` with the service-role
+key, and the dashboard subscribes to Realtime while keeping SSE as a fallback.
 
 ### Pages
 
 - `/` — landing page and architecture summary.
 - `/terminal` — customer checkout: submit payee, email and amount; renders BLOCK, WARN (with confirmation), or ALLOW with a QR hand-off and simulated capture.
+- `/pay/[orderId]` — QR destination for the mock rail; approve and capture the order.
+- `/pay/complete` — PayPal return URL; captures the approved sandbox order.
 - `/dashboard` — admin SOC console: live AG Grid telemetry, verdict filters, search, risk scores, rule flags and guard latency.
 
 ### API routes
@@ -93,8 +101,9 @@ The demo is **mock-first**: it runs end to end with no Supabase, PayPal or Anthr
 | `/api/create-order` | POST | Evaluate, then create a payment order. BLOCK → `403`; WARN → `requiresConfirmation` until `confirmed: true`. |
 | `/api/capture-order` | POST | Capture a created order (mock rail by default). |
 | `/api/merchants` | GET | Verified merchant registry. |
-| `/api/telemetry` | GET | Current telemetry snapshot. |
+| `/api/telemetry` | GET | Current telemetry snapshot (in-memory + Supabase, merged by id). |
 | `/api/telemetry/stream` | GET | SSE snapshot + live events. |
+| `/api/webhooks/paypal` | POST | PayPal webhook receiver; verifies the signature when `PAYPAL_WEBHOOK_ID` is set and marks the audit row captured. |
 
 `POST` bodies use `{ "payeeName": string, "targetEmail": string, "transactionAmount": number }`. `create-order` additionally accepts `currency` (ISO 4217) and `confirmed` (boolean).
 
@@ -134,6 +143,7 @@ All variables are optional for the mock demo. See `.env.example`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Absolute base for PayPal return/cancel URLs and QR links. |
 | `PAYMENT_RAIL` | `mock` | Set to `paypal` to use the PayPal Sandbox adapter. |
 | `ANTHROPIC_API_KEY` | unset | Enables the AI advisory pass. Without it, the rule engine runs alone. |
 | `ANTHROPIC_MODEL` | `claude-sonnet-4-5` | Model used for advisory checks. |
@@ -142,8 +152,28 @@ All variables are optional for the mock demo. See `.env.example`.
 | `PAYPAL_CLIENT_SECRET` | unset | Required for `PAYMENT_RAIL=paypal`. |
 | `PAYPAL_API_BASE` | `https://api-m.sandbox.paypal.com` | PayPal API host. |
 | `PAYPAL_CURRENCY` | `USD` | Currency used when the PayPal rail is active (PayPal does not settle KES). |
-| `NEXT_PUBLIC_SUPABASE_URL` | unset | Reserved for the future Supabase telemetry adapter. |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | unset | Reserved for the future Supabase telemetry adapter. |
+| `PAYPAL_WEBHOOK_ID` | unset | Enables webhook signature verification. Leave unset only for local demos. |
+| `NEXT_PUBLIC_SUPABASE_URL` | unset | Enables the Supabase registry, telemetry and Realtime. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | unset | Public read key; also powers the browser Realtime channel. |
+| `SUPABASE_SERVICE_ROLE_KEY` | unset | Server-only write key for audit inserts and webhook updates. Never prefix with `NEXT_PUBLIC_`. |
+
+### Supabase setup (optional)
+
+1. Create a Supabase project and copy the URL, anon key and service-role key into `.env.local`.
+2. Open the SQL editor and run [`supabase/schema.sql`](supabase/schema.sql). It creates
+   `verified_merchants` and `security_audits`, adds the extended audit columns, enables
+   RLS with public read / server-only writes, and adds `security_audits` to the
+   `supabase_realtime` publication.
+3. Restart `npm run dev`. The dashboard footer switches from
+   `in-memory SSE` to `Supabase Realtime + SSE fallback` once the channel subscribes.
+
+### PayPal sandbox setup (optional)
+
+1. Create a REST app in the PayPal developer dashboard and copy the client ID and secret.
+2. Set `PAYMENT_RAIL=paypal`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and
+   `NEXT_PUBLIC_APP_URL` (a public URL is required for the return/cancel redirects).
+3. Add a webhook pointing at `/api/webhooks/paypal` and set `PAYPAL_WEBHOOK_ID` so the
+   receiver verifies PayPal's transmission signature.
 
 ---
 
@@ -164,21 +194,28 @@ app/
   page.tsx                     landing page
   terminal/page.tsx            customer terminal
   dashboard/page.tsx           admin console shell
-  api/                         intercept, orders, merchants, telemetry, SSE
+  pay/[orderId]/page.tsx       mock-rail QR approval page
+  pay/complete/page.tsx        PayPal return/capture page
+  api/                         intercept, orders, merchants, telemetry, SSE, webhook
 components/
-  SecurityDashboard.tsx        AG Grid console with live SSE ingestion
+  SecurityDashboard.tsx        AG Grid console with Realtime + SSE ingestion
+  PayApprovalClient.tsx        approve/capture UI for /pay/[orderId]
 lib/
   types.ts                     shared GuardInput / GuardResult contract
   verdict.ts                   deterministic verdict rules
   nameSimilarity.ts            normalization + Levenshtein similarity
-  lookupMerchant.ts            verified merchant registry
+  lookupMerchant.ts            merchant registry interface + Supabase adapter
+  dbConnection.ts              lazy Supabase anon/service-role clients
+  audit-store.ts               best-effort security_audits persistence
   validation.ts                strict request validation
   agent.ts                     optional AI advisory + stricter-verdict combining
   intercept.ts                 shared guarded evaluation + telemetry
-  telemetry.ts                 in-memory sink and record shaping
+  telemetry.ts                 in-memory sink, record shaping, row normalization
   telemetry-seed.ts            seeded demo feed
+  supabase-browser.ts          browser Realtime client
   payment-rail.ts              mock rail + rail selection
   paypal-rail.ts               PayPal Sandbox adapter
+supabase/schema.sql            tables, RLS, indexes and Realtime publication
 tests/                         Vitest suites
 ```
 
@@ -186,7 +223,7 @@ tests/                         Vitest suites
 
 ## Notes and limitations
 
-- Telemetry is per-process and in-memory: it resets when the server restarts and is not shared across serverless instances. The `TelemetryRecord` shape already matches the planned Supabase table.
+- Telemetry falls back to an in-memory, per-process sink: it resets when the server restarts. Set the Supabase variables to persist `security_audits` and stream updates over Realtime; SSE stays on as a fallback.
 - The mock rail stores orders in memory. The PayPal adapter is wired but untested without sandbox credentials.
 - The AI advisory is advisory only: it holds no payment keys and cannot move funds or write to the database.
 - Sandbox money only — no real funds move.
