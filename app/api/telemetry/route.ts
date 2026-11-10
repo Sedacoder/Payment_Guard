@@ -1,15 +1,23 @@
-import { connection } from "next/server";
+import { NextResponse } from 'next/server';
+import { supabase } from '@/lib/dbConnection';
 
-import { listTelemetry } from "@/lib/telemetry";
-import { seedTelemetry } from "@/lib/telemetry-seed";
 
 export async function GET() {
-  // Cache Components would otherwise be free to prerender this snapshot.
-  await connection();
-  await seedTelemetry();
+  try {
+    const { data, error } = await supabase
+      .from('security_audits')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
 
-  return Response.json({
-    records: listTelemetry(500),
-    serverTime: new Date().toISOString(),
-  });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Return object wrapping an array matching Tallam's expected JSON format
+    return NextResponse.json({ records: data || [] }, { status: 200 });
+
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Telemetry retrieval failed' }, { status: 500 });
+  }
 }
