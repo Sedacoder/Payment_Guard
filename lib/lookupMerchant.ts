@@ -1,9 +1,14 @@
+import {
+  dbListVerifiedMerchants,
+  dbLookupMerchant,
+  isSupabaseConfigured,
+} from "./dbConnection";
 import type { Merchant } from "./types";
 
 /**
  * Read-only view of the verified merchant registry.
- * To move to Supabase later, write another object that implements this
- * interface and point `registry` (below) at it. Nothing else changes.
+ * The app talks to this interface, never to Supabase directly, so the demo can
+ * fall back to the seeded registry when no credentials are present.
  */
 export interface MerchantRegistry {
   findByNameAndEmail(name: string, email: string): Promise<Merchant | null>;
@@ -12,11 +17,11 @@ export interface MerchantRegistry {
 
 const normalize = (value: string): string => value.trim().toLowerCase();
 
-/** Stub data: the legitimate merchants from lib/mock-exploits.json. */
+/** Seed data mirroring the verified rows in Supabase. */
 const STUB_MERCHANTS: readonly Merchant[] = [
-  { id: "m1", name: "Naivas Supermarket", email: "pay@naivas.co.ke", typicalAmount: 2500 },
-  { id: "m2", name: "Equity Bank Teller", email: "cashier@equitybank.co.ke", typicalAmount: 10000 },
-  { id: "m3", name: "QuickMart Supermarket", email: "till@quickmart.co.ke", typicalAmount: 3400 },
+  { id: "m1", name: "Naivas Supermarket", email: "payments@naivas.co.ke", typicalAmount: 2500 },
+  { id: "m2", name: "Equity Bank", email: "settlements@equitybank.co.ke", typicalAmount: 10000 },
+  { id: "m3", name: "QuickMart", email: "pos@quickmart.co.ke", typicalAmount: 3400 },
 ];
 
 export const inMemoryRegistry: MerchantRegistry = {
@@ -32,18 +37,55 @@ export const inMemoryRegistry: MerchantRegistry = {
   },
 };
 
-/** The single place the rest of the app gets its registry from. */
-const registry: MerchantRegistry = inMemoryRegistry;
+/**
+ * Supabase-backed registry with a safety net: if the network or credentials
+ * fail, fall back to the seed so checkout never hard-fails. A legitimate
+ * "not found" (null) is NOT a failure and must stay a BLOCK.
+ */
+export const supabaseRegistry: MerchantRegistry = {
+  async findByNameAndEmail(name, email) {
+    try {
+      return await dbLookupMerchant(name, email);
+    } catch (error) {
+      console.error(
+        "[payment-guard] Supabase merchant lookup failed, using seeded registry:",
+        error,
+      );
+      return inMemoryRegistry.findByNameAndEmail(name, email);
+    }
+  },
+  async listAll() {
+    try {
+      return await dbListVerifiedMerchants();
+    } catch (error) {
+      console.error(
+        "[payment-guard] Supabase registry read failed, using seeded registry:",
+        error,
+      );
+      return inMemoryRegistry.listAll();
+    }
+  },
+};
+
+/** Resolved per call so a build-time import cannot freeze the choice. */
+function getRegistry(): MerchantRegistry {
+  return isSupabaseConfigured() ? supabaseRegistry : inMemoryRegistry;
+}
 
 /**
  * Tool the Guard Agent calls. Returns the verified merchant only when BOTH
  * name and email match exactly; otherwise null (= unverified payee).
  */
 export function lookupMerchant(payeeName: string, targetEmail: string): Promise<Merchant | null> {
-  return registry.findByNameAndEmail(payeeName, targetEmail);
+  return getRegistry().findByNameAndEmail(payeeName, targetEmail);
 }
 
-/** All verified merchants, for the later name-similarity check. */
+/** All verified merchants, for the name-similarity check. */
 export function listVerifiedMerchants(): Promise<Merchant[]> {
-  return registry.listAll();
+  return getRegistry().listAll();
+}
+
+/** Exposed for diagnostics and tests. */
+export function activeRegistryName(): "supabase" | "in-memory" {
+  return isSupabaseConfigured() ? "supabase" : "in-memory";
 }

@@ -10,7 +10,7 @@ import type { GuardInput, GuardResult } from "@/lib/types";
 
 const NAIVAS: GuardInput = {
   payeeName: "Naivas Supermarket",
-  targetEmail: "pay@naivas.co.ke",
+  targetEmail: "payments@naivas.co.ke",
   transactionAmount: 2500,
 };
 

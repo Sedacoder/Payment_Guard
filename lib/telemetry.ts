@@ -124,6 +124,7 @@ export function createTelemetryRecord({
   return record;
 }
 
+/** In-memory publish only. Use `persistTelemetry` for the Supabase copy. */
 export function recordTelemetry(record: TelemetryRecord): void {
   telemetryStore.record(record);
 }
@@ -134,4 +135,69 @@ export function listTelemetry(limit?: number): TelemetryRecord[] {
 
 export function subscribeTelemetry(listener: TelemetryListener): () => void {
   return telemetryStore.subscribe(listener);
+}
+
+const VERDICTS: readonly Verdict[] = ["ALLOW", "WARN", "BLOCK"];
+
+function asText(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() !== "" ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback: number): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Maps a `security_audits` row (or a Realtime payload) to the dashboard
+ * contract. Missing optional columns degrade gracefully instead of crashing
+ * the grid, which matters while the SQL schema is still being reconciled.
+ */
+export function normalizeAuditRow(row: Record<string, unknown>): TelemetryRecord {
+  const email = asText(row.target_email, "");
+  const verdictValue = row.verdict;
+  const verdict: Verdict = VERDICTS.includes(verdictValue as Verdict)
+    ? (verdictValue as Verdict)
+    : "BLOCK";
+
+  const record: TelemetryRecord = {
+    id: asText(row.id, asText(row.transaction_id, `txn_${crypto.randomUUID().slice(0, 8)}`)),
+    created_at: asText(row.created_at, new Date().toISOString()),
+    merchant_id: asText(row.merchant_id, "unverified"),
+    payee_name: asText(row.payee_name, "Unknown payee"),
+    target_email: email,
+    transaction_amount: asNumber(row.transaction_amount, 0),
+    currency: asText(row.currency, "KES"),
+    ip_address: asText(row.ip_address, "—"),
+    domain_signature: asText(row.domain_signature, email.split("@")[1] ?? "unknown"),
+    risk_score: asNumber(row.risk_score, 0),
+    verdict,
+    rule_flags: Array.isArray(row.rule_flags)
+      ? row.rule_flags.filter((flag): flag is string => typeof flag === "string")
+      : [],
+    execution_time_ms: asNumber(row.execution_time_ms, 0),
+    reason: asText(row.reason, ""),
+    ai_used: row.ai_used === true,
+  };
+
+  if (typeof row.suggestion === "string" && row.suggestion.trim() !== "") {
+    record.suggestion = row.suggestion;
+  }
+  if (row.similarity !== null && row.similarity !== undefined) {
+    record.similarity = asNumber(row.similarity, 0);
+  }
+  return record;
+}
+
+/**
+ * Best-effort Supabase copy. Never throws into the request path: a database
+ * outage must not block a payment decision or the local SSE feed.
+ */
+export async function persistTelemetry(record: TelemetryRecord): Promise<void> {
+  try {
+    const { insertAuditRecord } = await import("./audit-store");
+    await insertAuditRecord(record);
+  } catch (error) {
+    console.error("[payment-guard] telemetry persistence skipped:", error);
+  }
 }

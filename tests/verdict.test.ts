@@ -8,7 +8,7 @@ import { checkDeterministic, decideVerdict, SIMILARITY_THRESHOLD } from "@/lib/v
 
 const NAIVAS: GuardInput = {
   payeeName: "Naivas Supermarket",
-  targetEmail: "pay@naivas.co.ke",
+  targetEmail: "payments@naivas.co.ke",
   transactionAmount: 2500,
 };
 

@@ -1,44 +1,120 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import type { Merchant } from "./types";
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: { persistSession: false }
-});
+/**
+ * Supabase is optional. The demo runs on the in-memory registry and in-memory
+ * telemetry until these variables exist, so nothing here may run at module
+ * scope or throw during a build with no credentials.
+ */
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-export async function lookupMerchant(payeeName: string, targetEmail: string) {
-  const { data, error } = await supabase
-    .from('verified_merchants')
-    .select('id, merchant_name, target_email, historical_median_amount')
-    .ilike('merchant_name', payeeName)
-    .ilike('target_email', targetEmail)
-    .maybeSingle();
+export function isSupabaseConfigured(): boolean {
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+}
 
-  if (error) throw new Error(`Database read error: ${error.message}`);
-  if (!data) return null;
+export function hasSupabaseServiceRole(): boolean {
+  return Boolean(SUPABASE_SERVICE_ROLE_KEY);
+}
 
-  // Map Supabase snake_case data straight to Leon's Merchant shape
+let anonClient: SupabaseClient | null = null;
+let adminClient: SupabaseClient | null = null;
+
+function requireUrl(): string {
+  if (!SUPABASE_URL) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL is not configured.");
+  }
+  return SUPABASE_URL;
+}
+
+/** Read-only client. Safe for public reads and Realtime subscriptions. */
+export function getSupabaseClient(): SupabaseClient {
+  if (!SUPABASE_ANON_KEY) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY is not configured.");
+  }
+  anonClient ??= createClient(requireUrl(), SUPABASE_ANON_KEY, {
+    auth: { persistSession: false },
+  });
+  return anonClient;
+}
+
+/**
+ * Server-only client used for writes. Prefers the service-role key so RLS can
+ * stay locked down; falls back to the anon key so local demos still work when
+ * only the public credentials are present.
+ */
+export function getSupabaseAdminClient(): SupabaseClient {
+  if (!SUPABASE_ANON_KEY) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY is not configured.");
+  }
+  const key = SUPABASE_SERVICE_ROLE_KEY ?? SUPABASE_ANON_KEY;
+  adminClient ??= createClient(requireUrl(), key, {
+    auth: { persistSession: false },
+  });
+  return adminClient;
+}
+
+interface MerchantRow {
+  id: string;
+  merchant_name: string;
+  target_email: string;
+  email_domain?: string | null;
+  historical_median_amount: number | string | null;
+}
+
+function mapMerchant(row: MerchantRow): Merchant {
   return {
-    id: data.id,
-    name: data.merchant_name,
-    email: data.target_email,
-    typicalAmount: Number(data.historical_median_amount)
+    id: String(row.id),
+    name: row.merchant_name,
+    email: row.target_email,
+    typicalAmount: Number(row.historical_median_amount ?? 0),
   };
 }
 
-export async function listVerifiedMerchants() {
-  const { data, error } = await supabase
-    .from('verified_merchants')
-    .select('id, merchant_name, target_email, historical_median_amount');
+const MERCHANT_COLUMNS =
+  "id, merchant_name, target_email, email_domain, historical_median_amount";
 
-  if (error) throw new Error(`Database registry extraction failed: ${error.message}`);
-  if (!data) return [];
+/** Exact name + email match against the verified registry. */
+export async function dbLookupMerchant(
+  payeeName: string,
+  targetEmail: string,
+): Promise<Merchant | null> {
+  const { data, error } = await getSupabaseClient()
+    .from("verified_merchants")
+    .select(MERCHANT_COLUMNS)
+    .ilike("merchant_name", payeeName)
+    .ilike("target_email", targetEmail)
+    .maybeSingle();
 
-  return data.map(m => ({
-    id: m.id,
-    name: m.merchant_name,
-    email: m.target_email,
-    typicalAmount: Number(m.historical_median_amount)
-  }));
+  if (error) throw new Error(`Supabase merchant lookup failed: ${error.message}`);
+  return data ? mapMerchant(data as MerchantRow) : null;
+}
+
+export async function dbListVerifiedMerchants(): Promise<Merchant[]> {
+  const { data, error } = await getSupabaseClient()
+    .from("verified_merchants")
+    .select(MERCHANT_COLUMNS);
+
+  if (error) throw new Error(`Supabase registry read failed: ${error.message}`);
+  return ((data ?? []) as MerchantRow[]).map(mapMerchant);
+}
+
+/**
+ * Compatibility helpers used by the agent and by Leon's tool wiring.
+ * They return the full Merchant shape so callers do not need to know whether
+ * the registry came from Supabase or the in-memory seed.
+ */
+export const dbGetMerchantRegistryStubs = dbListVerifiedMerchants;
+
+export async function dbFindMerchantByName(name: string): Promise<Merchant | null> {
+  const { data, error } = await getSupabaseClient()
+    .from("verified_merchants")
+    .select(MERCHANT_COLUMNS)
+    .ilike("merchant_name", name)
+    .maybeSingle();
+
+  if (error) throw new Error(`Supabase merchant lookup failed: ${error.message}`);
+  return data ? mapMerchant(data as MerchantRow) : null;
 }
