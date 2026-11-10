@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   AllCommunityModule,
   ModuleRegistry,
@@ -14,7 +15,8 @@ import {
   type RowClassParams,
 } from "ag-grid-community";
 
-import type { TelemetryRecord } from "@/lib/telemetry";
+import { getBrowserSupabase } from "@/lib/supabase-browser";
+import { normalizeAuditRow, type TelemetryRecord } from "@/lib/telemetry";
 import type { Verdict } from "@/lib/types";
 
 // AG Grid v33+ is modular. Register the community feature set once.
@@ -140,6 +142,7 @@ export default function SecurityDashboard() {
   const [followLive, setFollowLive] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string>("—");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [transport, setTransport] = useState<"supabase" | "sse">("sse");
 
   const gridApiRef = useRef<GridApi<TelemetryRecord> | null>(null);
   const followLiveRef = useRef(followLive);
@@ -194,9 +197,45 @@ export default function SecurityDashboard() {
       }
     });
 
+    // Supabase Realtime is additive: SSE above keeps the demo alive when the
+    // database is not configured. INSERT and UPDATE both matter because the
+    // PayPal webhook flips a row to ALLOW on capture.
+    const supabase = getBrowserSupabase();
+    let channel: RealtimeChannel | null = null;
+
+    if (supabase) {
+      // The transport flips to "supabase" only once the channel subscribes;
+      // until then SSE is the accurate label and the live feed keeps working.
+      channel = supabase
+        .channel("security_audits_live")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "security_audits" },
+          (payload) => {
+            const row = payload.new as Record<string, unknown>;
+            if (!row || Object.keys(row).length === 0) return;
+            const record = normalizeAuditRow(row);
+            setRecords((current) => mergeRecords(current, [record]));
+            setLastUpdated(new Date().toLocaleTimeString());
+            if (followLiveRef.current) {
+              requestAnimationFrame(() => gridApiRef.current?.ensureIndexVisible(0, "top"));
+            }
+          },
+        )
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            setTransport("supabase");
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            console.warn(`[payment-guard] realtime channel ${status}; SSE remains active.`);
+            setTransport("sse");
+          }
+        });
+    }
+
     return () => {
       cancelled = true;
       source.close();
+      if (channel) void supabase?.removeChannel(channel);
     };
   }, []);
 
@@ -455,8 +494,10 @@ export default function SecurityDashboard() {
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500">
             <span>
-              Showing {visibleRecords.length} of {records.length} events · source: in-memory
-              telemetry (Supabase Realtime adapter pending)
+              Showing {visibleRecords.length} of {records.length} events · transport:{" "}
+              {transport === "supabase"
+                ? "Supabase Realtime + SSE fallback"
+                : "in-memory SSE (Supabase not configured)"}
             </span>
             <span className="flex items-center gap-3">
               <span className="flex items-center gap-1">
