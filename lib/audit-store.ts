@@ -9,30 +9,19 @@ import { normalizeAuditRow, type TelemetryRecord } from "./telemetry";
  * database problem can never block a verdict or an order.
  */
 
-const CORE_COLUMNS = new Set([
-  "id",
-  "created_at",
-  "payee_name",
-  "target_email",
-  "transaction_amount",
-  "currency",
-  "verdict",
-  "reason",
-  "suggestion",
-  "risk_score",
-  "execution_time_ms",
-  "ai_used",
-  "rule_flags",
-]);
-
-function toPayload(record: TelemetryRecord, full: boolean): Record<string, unknown> {
+function toPayload(record: TelemetryRecord): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     id: record.id,
     created_at: record.created_at,
+    // Satisfies the legacy NOT NULL/unique column; `linkAuditToOrder` replaces
+    // it with the real order id once the rail creates one.
+    transaction_id: record.id,
     merchant_id: record.merchant_id,
     payee_name: record.payee_name,
     target_email: record.target_email,
     transaction_amount: record.transaction_amount,
+    // Legacy mirror for tables created by the first revision.
+    amount: record.transaction_amount,
     currency: record.currency,
     ip_address: record.ip_address,
     domain_signature: record.domain_signature,
@@ -46,27 +35,37 @@ function toPayload(record: TelemetryRecord, full: boolean): Record<string, unkno
 
   if (record.suggestion) payload.suggestion = record.suggestion;
   if (typeof record.similarity === "number") payload.similarity = record.similarity;
+  return payload;
+}
 
-  if (full) return payload;
-  return Object.fromEntries(
-    Object.entries(payload).filter(([key]) => CORE_COLUMNS.has(key)),
-  );
+/** Columns that existed before the dashboard contract was finalised. */
+function toLegacyPayload(record: TelemetryRecord): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    id: record.id,
+    transaction_id: record.id,
+    payee_name: record.payee_name,
+    verdict: record.verdict,
+    reason: record.reason,
+    amount: record.transaction_amount,
+  };
+  if (record.suggestion) payload.suggestion = record.suggestion;
+  return payload;
 }
 
 export async function insertAuditRecord(record: TelemetryRecord): Promise<void> {
   if (!isSupabaseConfigured()) return;
   const supabase = getSupabaseAdminClient();
 
-  const first = await supabase.from("security_audits").insert([toPayload(record, true)]);
+  const first = await supabase.from("security_audits").insert([toPayload(record)]);
   if (!first.error) return;
 
-  // Older deployments may not have the extended columns yet. Keep the row
-  // rather than losing the event, and surface the schema drift in the logs.
+  // A table created by an earlier revision may not have the extended columns.
+  // Keep the event rather than losing it, and surface the schema drift.
   console.warn(
-    "[payment-guard] full audit insert failed, retrying with core columns:",
+    "[payment-guard] full audit insert failed, retrying with legacy columns:",
     first.error.message,
   );
-  const retry = await supabase.from("security_audits").insert([toPayload(record, false)]);
+  const retry = await supabase.from("security_audits").insert([toLegacyPayload(record)]);
   if (retry.error) {
     console.error("[payment-guard] audit insert failed:", retry.error.message);
   }
@@ -108,6 +107,8 @@ export async function linkAuditToOrder(
   }
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Marks the audit row as captured. Tries `transaction_id` first because that
  * is what the webhook and order creation link, then falls back to the row id.
@@ -131,6 +132,10 @@ export async function markAuditCaptured(orderId: string, reason: string): Promis
       linked.error.message,
     );
   }
+
+  // The row id is a uuid; a rail order id is not. Only try this when the value
+  // can actually be an id, otherwise Postgres rejects the comparison.
+  if (!UUID_PATTERN.test(orderId)) return false;
 
   const byId = await supabase
     .from("security_audits")

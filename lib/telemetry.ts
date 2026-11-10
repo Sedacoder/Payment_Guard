@@ -101,7 +101,7 @@ export function createTelemetryRecord({
 }: CreateTelemetryArgs): TelemetryRecord {
   const domain = context.domainSignature ?? input.targetEmail.split("@")[1] ?? "unknown";
   const record: TelemetryRecord = {
-    id: `txn_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
+    id: crypto.randomUUID(),
     created_at: (context.createdAt ?? new Date()).toISOString(),
     merchant_id: context.merchantId ?? "unverified",
     payee_name: input.payeeName,
@@ -161,12 +161,12 @@ export function normalizeAuditRow(row: Record<string, unknown>): TelemetryRecord
     : "BLOCK";
 
   const record: TelemetryRecord = {
-    id: asText(row.id, asText(row.transaction_id, `txn_${crypto.randomUUID().slice(0, 8)}`)),
+    id: asText(row.id, asText(row.transaction_id, crypto.randomUUID())),
     created_at: asText(row.created_at, new Date().toISOString()),
     merchant_id: asText(row.merchant_id, "unverified"),
     payee_name: asText(row.payee_name, "Unknown payee"),
     target_email: email,
-    transaction_amount: asNumber(row.transaction_amount, 0),
+    transaction_amount: asNumber(row.transaction_amount ?? row.amount, 0),
     currency: asText(row.currency, "KES"),
     ip_address: asText(row.ip_address, "—"),
     domain_signature: asText(row.domain_signature, email.split("@")[1] ?? "unknown"),

@@ -76,7 +76,16 @@ function mapMerchant(row: MerchantRow): Merchant {
 const MERCHANT_COLUMNS =
   "id, merchant_name, target_email, email_domain, historical_median_amount";
 
-/** Exact name + email match against the verified registry. */
+const normalize = (value: string): string => value.trim().toLowerCase();
+
+/**
+ * Exact name + email match against the verified registry.
+ *
+ * The email is matched with `eq` (not `ilike`) so a payee name or email
+ * containing `%` or `_` cannot wildcard its way into a verified merchant.
+ * The name is compared case-insensitively in JS, matching the in-memory
+ * registry's semantics.
+ */
 export async function dbLookupMerchant(
   payeeName: string,
   targetEmail: string,
@@ -84,12 +93,14 @@ export async function dbLookupMerchant(
   const { data, error } = await getSupabaseClient()
     .from("verified_merchants")
     .select(MERCHANT_COLUMNS)
-    .ilike("merchant_name", payeeName)
-    .ilike("target_email", targetEmail)
+    .eq("target_email", targetEmail.toLowerCase())
     .maybeSingle();
 
   if (error) throw new Error(`Supabase merchant lookup failed: ${error.message}`);
-  return data ? mapMerchant(data as MerchantRow) : null;
+  if (!data) return null;
+
+  const merchant = mapMerchant(data as MerchantRow);
+  return normalize(merchant.name) === normalize(payeeName) ? merchant : null;
 }
 
 export async function dbListVerifiedMerchants(): Promise<Merchant[]> {
@@ -109,12 +120,7 @@ export async function dbListVerifiedMerchants(): Promise<Merchant[]> {
 export const dbGetMerchantRegistryStubs = dbListVerifiedMerchants;
 
 export async function dbFindMerchantByName(name: string): Promise<Merchant | null> {
-  const { data, error } = await getSupabaseClient()
-    .from("verified_merchants")
-    .select(MERCHANT_COLUMNS)
-    .ilike("merchant_name", name)
-    .maybeSingle();
-
-  if (error) throw new Error(`Supabase merchant lookup failed: ${error.message}`);
-  return data ? mapMerchant(data as MerchantRow) : null;
+  const merchants = await dbListVerifiedMerchants();
+  const target = normalize(name);
+  return merchants.find((merchant) => normalize(merchant.name) === target) ?? null;
 }
