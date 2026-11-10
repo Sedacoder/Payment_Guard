@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: false,
         action: 'BLOCK',
-        message: assessment.reason,
+        reason: assessment.reason,
         suggestion: assessment.suggestion
       }, { status: 403 });
     }
