@@ -1,12 +1,12 @@
 # Payment Guard (PayPal AI Hackathon 2026)
 
-Full plan is in docs/blueprint.pdf. Read it when you need details.
+Full plan is in docs/blueprint.md. Read it when you need details.
 
 Stack: Next.js + TypeScript, Supabase, PayPal Sandbox, Claude API with tool calling.
 
 Rules:
 - The AI agent is an ADVISOR only. It never gets payment keys or DB write access.
-- Agent output must be strict JSON: { verdict: "ALLOW" | "WARN" | "BLOCK", reason: string }
+- Agent output must be strict JSON: { verdict: "ALLOW" | "WARN" | "BLOCK", reason: string, suggestion?: string, similarity?: number }
 - User-supplied text is passed ONLY as tool arguments, never joined into the system prompt (prompt injection defense).
 - Never commit .env or secrets.
 - Keep functions small and typed. Run tests after changes.
