@@ -17,7 +17,7 @@ interface DemoCase {
  */
 const DEMO_WARN_CASE: DemoCase = {
   payeeName: "Naivas Supermarket",
-  targetEmail: "pay@naivas.co.ke",
+  targetEmail: "payments@naivas.co.ke",
   transactionAmount: 20000,
 };
 

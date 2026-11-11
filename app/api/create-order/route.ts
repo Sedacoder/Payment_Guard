@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import QRCode from "qrcode";
 
+import { linkAuditToOrder } from "@/lib/audit-store";
 import { interceptPayment } from "@/lib/intercept";
 import { getPaymentRail } from "@/lib/payment-rail";
 import { getClientIp } from "@/lib/request-meta";
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
           success: false,
           action: "BLOCK",
           message: `Security Intercept: ${result.reason}`,
+          reason: result.reason,
           assessment,
         },
         { status: 403 },
@@ -76,12 +78,18 @@ export async function POST(request: Request) {
         action: "WARN",
         requiresConfirmation: true,
         message: result.reason,
+        reason: result.reason,
         assessment,
       });
     }
 
     const rail = await getPaymentRail();
     const order = await rail.createOrder(parsed.input, currency);
+
+    // The PayPal webhook and the mock capture path update the audit row by
+    // order id, so link the decision to the order as soon as it exists.
+    await linkAuditToOrder(telemetry.id, order.id);
+
     const approvalUrl = order.approvalUrl.startsWith("http")
       ? order.approvalUrl
       : `${new URL(request.url).origin}${order.approvalUrl}`;
@@ -96,6 +104,7 @@ export async function POST(request: Request) {
       action: result.verdict,
       confirmed: result.verdict === "WARN" ? confirmed : undefined,
       message: result.reason,
+      reason: result.reason,
       assessment,
       order,
       approvalUrl,

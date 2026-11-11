@@ -1,6 +1,11 @@
 import { runSecurityAgent, type AgentResult } from "./agent";
 import { lookupMerchant } from "./lookupMerchant";
-import { createTelemetryRecord, recordTelemetry, type TelemetryRecord } from "./telemetry";
+import {
+  createTelemetryRecord,
+  persistTelemetry,
+  recordTelemetry,
+  type TelemetryRecord,
+} from "./telemetry";
 import type { GuardInput } from "./types";
 
 export interface InterceptContext {
@@ -35,6 +40,8 @@ export async function interceptPayment(
     },
   });
   recordTelemetry(telemetry);
+  // Best-effort live copy; the in-memory sink above is the demo fallback.
+  await persistTelemetry(telemetry);
 
   return { result, telemetry };
 }

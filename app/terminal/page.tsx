@@ -56,14 +56,14 @@ const SCENARIOS = [
     label: "Legitimate merchant",
     hint: "Verified Naivas",
     payeeName: "Naivas Supermarket",
-    targetEmail: "pay@naivas.co.ke",
+    targetEmail: "payments@naivas.co.ke",
     transactionAmount: "2500",
   },
   {
     label: "Amount spike",
     hint: "8x the usual",
     payeeName: "Naivas Supermarket",
-    targetEmail: "pay@naivas.co.ke",
+    targetEmail: "payments@naivas.co.ke",
     transactionAmount: "20000",
   },
 ] as const;
@@ -128,7 +128,7 @@ function AssessmentDetails({ assessment }: { assessment: Assessment }) {
 
 export default function PaymentTerminalPage() {
   const [payeeName, setPayeeName] = useState("Naivas Supermarket");
-  const [targetEmail, setTargetEmail] = useState("pay@naivas.co.ke");
+  const [targetEmail, setTargetEmail] = useState("payments@naivas.co.ke");
   const [transactionAmount, setTransactionAmount] = useState("2500");
   const [screen, setScreen] = useState<Screen>("idle");
   const [assessment, setAssessment] = useState<Assessment | null>(null);
@@ -463,7 +463,12 @@ export default function PaymentTerminalPage() {
                   Customer scans to approve. No account details are read aloud.
                 </p>
                 <p className="mt-1 break-all text-center font-mono text-[10px] text-slate-400">
-                  {approvalUrl}
+                  <Link
+                    href={approvalUrl}
+                    className="underline decoration-dotted underline-offset-2 transition hover:text-emerald-600"
+                  >
+                    {approvalUrl}
+                  </Link>
                 </p>
               </div>
 
