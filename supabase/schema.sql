@@ -103,6 +103,14 @@ alter table public.security_audits alter column transaction_id drop not null;
 alter table public.security_audits alter column amount drop not null;
 alter table public.security_audits alter column amount set default 0;
 
+-- The first revision also made payee_name and transaction_id unique. An audit
+-- log records every attempt, so the same merchant must be allowed to appear
+-- many times, and one order may be touched by several events.
+alter table public.security_audits
+  drop constraint if exists security_audits_payee_name_key;
+alter table public.security_audits
+  drop constraint if exists security_audits_transaction_id_key;
+
 -- Backfill the legacy amount into the dashboard column.
 update public.security_audits
   set transaction_amount = amount

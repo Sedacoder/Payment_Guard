@@ -7,9 +7,15 @@ import type { Merchant } from "./types";
  * telemetry until these variables exist, so nothing here may run at module
  * scope or throw during a build with no credentials.
  */
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+/** Treat an empty env var (e.g. `KEY=`) as absent. */
+const envValue = (value: string | undefined): string | undefined => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+};
+
+const SUPABASE_URL = envValue(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const SUPABASE_ANON_KEY = envValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+const SUPABASE_SERVICE_ROLE_KEY = envValue(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 export function isSupabaseConfigured(): boolean {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);

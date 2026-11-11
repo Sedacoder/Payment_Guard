@@ -322,6 +322,8 @@ export default function SecurityDashboard() {
         minWidth: 250,
         flex: 1.1,
         cellRenderer: FlagsCell,
+        valueFormatter: (params) =>
+          Array.isArray(params.value) ? params.value.join(", ") : "",
       },
       {
         field: "ip_address",

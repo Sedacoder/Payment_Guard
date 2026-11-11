@@ -52,6 +52,10 @@ function toLegacyPayload(record: TelemetryRecord): Record<string, unknown> {
   return payload;
 }
 
+/** A missing column/schema-cache error means an older table revision. */
+const MISSING_COLUMN_PATTERN =
+  /column .* does not exist|could not find the '.*' column|schema cache/i;
+
 export async function insertAuditRecord(record: TelemetryRecord): Promise<void> {
   if (!isSupabaseConfigured()) return;
   const supabase = getSupabaseAdminClient();
@@ -59,8 +63,14 @@ export async function insertAuditRecord(record: TelemetryRecord): Promise<void> 
   const first = await supabase.from("security_audits").insert([toPayload(record)]);
   if (!first.error) return;
 
-  // A table created by an earlier revision may not have the extended columns.
-  // Keep the event rather than losing it, and surface the schema drift.
+  // Only an older table revision justifies dropping to the legacy columns.
+  // Any other failure (duplicate key, RLS, network) would fail the same way,
+  // so report it once instead of retrying.
+  if (!MISSING_COLUMN_PATTERN.test(first.error.message)) {
+    console.error("[payment-guard] audit insert failed:", first.error.message);
+    return;
+  }
+
   console.warn(
     "[payment-guard] full audit insert failed, retrying with legacy columns:",
     first.error.message,
