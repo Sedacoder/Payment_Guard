@@ -23,6 +23,8 @@ export interface Merchant {
   id: string;
   name: string;
   email: string;
+  /** The only email domain this merchant is allowed to use, e.g. "naivas.co.ke". */
+  emailDomain: string;
   /** The amount this merchant normally receives. Used for the 5x WARN rule. */
   typicalAmount: number;
 }

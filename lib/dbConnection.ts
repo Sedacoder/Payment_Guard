@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { emailDomainOf, matchesVerifiedMerchant } from "./nameSimilarity";
 import type { Merchant } from "./types";
 
 /**
@@ -75,6 +76,8 @@ function mapMerchant(row: MerchantRow): Merchant {
     id: String(row.id),
     name: row.merchant_name,
     email: row.target_email,
+    emailDomain:
+      row.email_domain?.trim().toLowerCase() || emailDomainOf(row.target_email) || "",
     typicalAmount: Number(row.historical_median_amount ?? 0),
   };
 }
@@ -85,28 +88,18 @@ const MERCHANT_COLUMNS =
 const normalize = (value: string): string => value.trim().toLowerCase();
 
 /**
- * Exact name + email match against the verified registry.
+ * Name + email-domain match against the verified registry.
  *
- * The email is matched with `eq` (not `ilike`) so a payee name or email
- * containing `%` or `_` cannot wildcard its way into a verified merchant.
- * The name is compared case-insensitively in JS, matching the in-memory
- * registry's semantics.
+ * Matching happens in memory after one select, using the same rules as the
+ * in-memory registry. The payee's text never becomes a query pattern, so `%`
+ * or `_` in a name or email cannot wildcard its way into a verified merchant.
  */
 export async function dbLookupMerchant(
   payeeName: string,
   targetEmail: string,
 ): Promise<Merchant | null> {
-  const { data, error } = await getSupabaseClient()
-    .from("verified_merchants")
-    .select(MERCHANT_COLUMNS)
-    .eq("target_email", targetEmail.toLowerCase())
-    .maybeSingle();
-
-  if (error) throw new Error(`Supabase merchant lookup failed: ${error.message}`);
-  if (!data) return null;
-
-  const merchant = mapMerchant(data as MerchantRow);
-  return normalize(merchant.name) === normalize(payeeName) ? merchant : null;
+  const merchants = await dbListVerifiedMerchants();
+  return merchants.find((merchant) => matchesVerifiedMerchant(merchant, payeeName, targetEmail)) ?? null;
 }
 
 export async function dbListVerifiedMerchants(): Promise<Merchant[]> {
@@ -118,13 +111,7 @@ export async function dbListVerifiedMerchants(): Promise<Merchant[]> {
   return ((data ?? []) as MerchantRow[]).map(mapMerchant);
 }
 
-/**
- * Compatibility helpers used by the agent and by Leon's tool wiring.
- * They return the full Merchant shape so callers do not need to know whether
- * the registry came from Supabase or the in-memory seed.
- */
-export const dbGetMerchantRegistryStubs = dbListVerifiedMerchants;
-
+/** Compatibility helper: look a merchant up by name only, ignoring the email. */
 export async function dbFindMerchantByName(name: string): Promise<Merchant | null> {
   const merchants = await dbListVerifiedMerchants();
   const target = normalize(name);
