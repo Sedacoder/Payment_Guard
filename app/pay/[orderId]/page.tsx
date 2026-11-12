@@ -20,7 +20,7 @@ async function ApprovalShell({
 
 function ApprovalFallback() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-12 text-slate-900">
+    <main className="theme-light-interface flex min-h-screen items-center justify-center bg-slate-50 px-6 py-12 text-slate-900">
       <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-600">
           Payment Guard

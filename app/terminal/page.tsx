@@ -228,7 +228,7 @@ export default function PaymentTerminalPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
+    <main className="theme-light-interface min-h-screen bg-slate-50 text-slate-900">
       <div className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-72 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-100 via-slate-50 to-slate-50" />
 
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">

@@ -112,7 +112,7 @@ function CaptureOnReturn() {
 
 export default function PayCompletePage() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-12 text-slate-900">
+    <main className="theme-light-interface flex min-h-screen items-center justify-center bg-slate-50 px-6 py-12 text-slate-900">
       <Suspense
         fallback={
           <div className="flex items-center gap-3 text-sm text-slate-500">
