@@ -6,8 +6,8 @@
 --
 -- The app still runs without Supabase. When NEXT_PUBLIC_SUPABASE_URL and
 -- NEXT_PUBLIC_SUPABASE_ANON_KEY exist, the registry and telemetry switch to
--- these tables. Writes use SUPABASE_SERVICE_ROLE_KEY when provided; otherwise
--- the demo insert/update policies below keep the sandbox working.
+-- these tables. Reads and Realtime use the anon key; writes use
+-- SUPABASE_SERVICE_ROLE_KEY, which bypasses RLS.
 
 -- ---------------------------------------------------------------------------
 -- Verified merchant registry
@@ -139,23 +139,26 @@ create policy "security_audits_public_read"
   to anon, authenticated
   using (true);
 
--- HACKATHON SANDBOX ONLY.
--- These policies let the anon key write audit rows so the demo works without a
--- service-role key. Remove them in production and rely on
--- SUPABASE_SERVICE_ROLE_KEY instead: otherwise any browser holding the anon key
--- can forge audit rows or mark its own payment as ALLOW.
+-- Writes go through SUPABASE_SERVICE_ROLE_KEY, which bypasses RLS. The anon key
+-- must therefore not be able to insert or update audit rows: otherwise any
+-- browser holding it could forge a verdict or mark its own payment as ALLOW.
+-- These drops remove the sandbox policies from the first revision.
+--
+-- Local demo without a service-role key? Uncomment the two policies below to
+-- restore the old behaviour. Never do this on a shared or production project.
 drop policy if exists "security_audits_demo_insert" on public.security_audits;
-create policy "security_audits_demo_insert"
-  on public.security_audits for insert
-  to anon, authenticated
-  with check (true);
-
 drop policy if exists "security_audits_demo_update" on public.security_audits;
-create policy "security_audits_demo_update"
-  on public.security_audits for update
-  to anon, authenticated
-  using (true)
-  with check (true);
+
+-- create policy "security_audits_demo_insert"
+--   on public.security_audits for insert
+--   to anon, authenticated
+--   with check (true);
+--
+-- create policy "security_audits_demo_update"
+--   on public.security_audits for update
+--   to anon, authenticated
+--   using (true)
+--   with check (true);
 
 -- ---------------------------------------------------------------------------
 -- Realtime (used by the admin dashboard)
