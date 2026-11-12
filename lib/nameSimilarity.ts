@@ -66,6 +66,47 @@ export function nameSimilarity(a: string, b: string): number {
   return 1 - levenshtein(x, y) / longest;
 }
 
+/** True when both names are the same merchant after cleaning ("Naivas" = "NAIVAS supermarket"). */
+export function sameMerchantName(a: string, b: string): boolean {
+  const x = normalizeName(a);
+  return x !== "" && x === normalizeName(b);
+}
+
+/** True when the merchant's cleaned name appears inside the payee's cleaned name as whole words. */
+export function containsMerchantName(payeeName: string, merchantName: string): boolean {
+  const payee = normalizeName(payeeName).split(" ").filter(Boolean);
+  const brand = normalizeName(merchantName).split(" ").filter(Boolean);
+  if (brand.length === 0 || brand.length > payee.length) return false;
+  const wanted = brand.join(" ");
+  for (let i = 0; i + brand.length <= payee.length; i++) {
+    if (payee.slice(i, i + brand.length).join(" ") === wanted) return true;
+  }
+  return false;
+}
+
+/** True when the name contains text that looks like instructions to an AI. */
+export function hasInjectionMarker(name: string): boolean {
+  return INJECTION_MARKER.test(name);
+}
+
+/** The part after the single "@", lowercased, or null if the email is malformed. */
+export function emailDomainOf(email: string): string | null {
+  const parts = email.trim().toLowerCase().split("@");
+  return parts.length === 2 && parts[0] !== "" && parts[1] !== "" ? parts[1] : null;
+}
+
+/** Verified = same merchant name AND the email's domain is exactly the merchant's emailDomain. */
+export function matchesVerifiedMerchant(
+  merchant: Merchant,
+  payeeName: string,
+  targetEmail: string,
+): boolean {
+  return (
+    sameMerchantName(payeeName, merchant.name) &&
+    emailDomainOf(targetEmail) === merchant.emailDomain.trim().toLowerCase()
+  );
+}
+
 export interface ClosestMatch {
   merchant: Merchant;
   similarity: number;

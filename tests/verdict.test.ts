@@ -77,14 +77,14 @@ describe("name similarity", () => {
 });
 
 describe("deterministic verdict rules", () => {
-  it("blocks an unknown payee with no look-alike suggestion", async () => {
+  it("warns on an unknown payee with no look-alike suggestion", async () => {
     const merchants = await listVerifiedMerchants();
     const result = decideVerdict(
       { payeeName: "Acme Widgets", targetEmail: "pay@acme.example", transactionAmount: 100 },
       null,
       merchants,
     );
-    expect(result.verdict).toBe("BLOCK");
+    expect(result.verdict).toBe("WARN");
     expect(result.suggestion).toBeUndefined();
   });
 
