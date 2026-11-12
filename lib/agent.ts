@@ -181,7 +181,7 @@ export async function runAiAdvisory(input: GuardInput): Promise<GuardResult | nu
   if (!apiKey || process.env.PAYMENT_GUARD_AI === "off") return null;
 
   const client = new Anthropic({ apiKey });
-  const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5";
+  const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5";
   const messages: MessageParam[] = [
     {
       role: "user",

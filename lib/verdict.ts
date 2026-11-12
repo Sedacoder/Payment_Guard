@@ -47,7 +47,7 @@ export function decideVerdict(
     return { verdict: "BLOCK", reason: "Invalid payment details." };
   }
 
-  const injected = hasInjectionMarker(input.payeeName);
+  const injected = hasInjectionMarker(input.payeeName) || hasInjectionMarker(input.targetEmail);
 
   // Same merchant by name (after cleaning): check the email domain, then the amount.
   const sameName =
@@ -90,9 +90,9 @@ export function decideVerdict(
     };
   }
 
-  // Instructions hidden in the payee name are never acceptable, even for an unknown merchant.
+  // Instructions hidden in the payee name or email are never acceptable, even for an unknown merchant.
   if (injected) {
-    return { verdict: "BLOCK", reason: "Payee name contains instructions and was blocked." };
+    return { verdict: "BLOCK", reason: "Payee name or email contains instructions and was blocked." };
   }
 
   // Unknown merchant with no look-alike name: the customer decides.
