@@ -63,6 +63,7 @@ async function runSeed(): Promise<void> {
           ...rule,
           flags: deriveRuleFlags(input, rule),
           aiUsed: false,
+          advisory: null,
           latencyMs: 2 + ((index * 3) % 9),
         },
         context: {
