@@ -24,6 +24,12 @@ const isValidInput = (input: GuardInput): boolean =>
 
 /** A verified merchant (name and email domain match): ALLOW, or WARN if the amount is unusually high. */
 function judgeVerified(input: GuardInput, merchant: Merchant): GuardResult {
+  if (input.targetEmail.trim().toLowerCase() !== merchant.email.trim().toLowerCase()) {
+    return {
+      verdict: "WARN",
+      reason: `Email is at the registered domain but is not the registered address for ${merchant.name}.`,
+    };
+  }
   if (input.transactionAmount > merchant.typicalAmount * AMOUNT_MULTIPLIER) {
     return {
       verdict: "WARN",
