@@ -180,11 +180,16 @@ function parseAdvisory(text: string): GuardResult | null {
  * Optional AI advisory pass. Returns null when no key is configured or the
  * provider errors, so the deterministic engine always remains the floor.
  */
+/** The AI gets this long (whole advisory, all tool turns) before the rules answer alone. */
+export const AI_TIMEOUT_MS = 8000;
+
 export async function runAiAdvisory(input: GuardInput): Promise<GuardResult | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey || process.env.PAYMENT_GUARD_AI === "off") return null;
 
   const client = new Anthropic({ apiKey });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
   const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5";
   const messages: MessageParam[] = [
     {
@@ -193,14 +198,18 @@ export async function runAiAdvisory(input: GuardInput): Promise<GuardResult | nu
     },
   ];
 
+  try {
   for (let turn = 0; turn < 6; turn++) {
-    const response = await client.messages.create({
-      model,
-      max_tokens: 512,
-      system: SYSTEM_PROMPT,
-      tools: TOOLS,
-      messages,
-    });
+    const response = await client.messages.create(
+      {
+        model,
+        max_tokens: 512,
+        system: SYSTEM_PROMPT,
+        tools: TOOLS,
+        messages,
+      },
+      { signal: controller.signal },
+    );
 
     const toolUses = response.content.filter(
       (block): block is ToolUseBlock => block.type === "tool_use",
@@ -233,6 +242,9 @@ export async function runAiAdvisory(input: GuardInput): Promise<GuardResult | nu
   }
 
   return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Rule-derived flags, shared with the telemetry seeder. */
