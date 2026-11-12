@@ -14,14 +14,16 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
     "@supabase/supabase-js": "^2.119.0",
+    "@tailwindcss/postcss": "^4.3.5",
     "@tailwindcss/turbopack": "^4",
     "ag-grid-community": "33.0.0",
     "ag-grid-react": "33.0.0",
     "next": "16.4.5",
+    "postcss": "^8.5.32",
     "qrcode": "^1.5.4",
-    "tailwindcss": "^4",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "tailwindcss": "^4.3.5"
   },
   "devDependencies": {
     "@types/node": "^20",
