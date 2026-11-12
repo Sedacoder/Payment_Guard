@@ -16,6 +16,7 @@ import {
 } from "ag-grid-community";
 
 import { getBrowserSupabase } from "@/lib/supabase-browser";
+import { useTheme } from "@/components/ThemeProvider";
 import { normalizeAuditRow, type TelemetryRecord } from "@/lib/telemetry";
 import type { Verdict } from "@/lib/types";
 
@@ -27,22 +28,6 @@ type VerdictFilter = "ALL" | Verdict;
 
 const MAX_ROWS = 500;
 
-const gridTheme = themeQuartz.withParams({
-  backgroundColor: "#0b1220",
-  foregroundColor: "#e2e8f0",
-  chromeBackgroundColor: "#0f1a2b",
-  headerBackgroundColor: "#0b1526",
-  headerTextColor: "#8ea3bd",
-  borderColor: "#1c2a3f",
-  accentColor: "#34d399",
-  browserColorScheme: "dark",
-  rowHoverColor: "#132033",
-  oddRowBackgroundColor: "#0c1626",
-  selectedRowBackgroundColor: "#16324a",
-  headerFontWeight: 600,
-  fontFamily: "var(--font-geist-sans), system-ui, sans-serif",
-});
-
 const VERDICT_STYLES: Record<Verdict, string> = {
   ALLOW: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
   WARN: "border-amber-400/30 bg-amber-400/10 text-amber-300",
@@ -50,9 +35,9 @@ const VERDICT_STYLES: Record<Verdict, string> = {
 };
 
 const MONO_STYLE = { fontFamily: "var(--font-geist-mono), monospace", fontSize: "11px" };
-const REASON_STYLE = { fontSize: "12px", color: "#cbd5e1" };
-const SUGGESTION_STYLE = { fontSize: "12px", color: "#fbbf24" };
-const MUTED_STYLE = { fontSize: "11px", color: "#94a3b8" };
+const REASON_STYLE = { fontSize: "12px", color: "var(--grid-reason-color)" };
+const SUGGESTION_STYLE = { fontSize: "12px", color: "var(--grid-suggestion-color)" };
+const MUTED_STYLE = { fontSize: "11px", color: "var(--grid-muted-color)" };
 
 /* -------------------------------------------------------------------------- */
 /* Icons                                                                      */
@@ -275,6 +260,7 @@ function SummaryCard({
 /* -------------------------------------------------------------------------- */
 
 export default function SecurityDashboard() {
+  const { theme } = useTheme();
   const [records, setRecords] = useState<TelemetryRecord[]>([]);
   const [connection, setConnection] = useState<ConnectionStatus>("CONNECTING");
   const [filter, setFilter] = useState<VerdictFilter>("ALL");
@@ -288,6 +274,25 @@ export default function SecurityDashboard() {
   const gridApiRef = useRef<GridApi<TelemetryRecord> | null>(null);
   const followLiveRef = useRef(followLive);
   const pendingRef = useRef<TelemetryRecord[]>([]);
+  const gridTheme = useMemo(
+    () =>
+      themeQuartz.withParams({
+        backgroundColor: theme === "dark" ? "#0b1220" : "#ffffff",
+        foregroundColor: theme === "dark" ? "#e2e8f0" : "#0f172a",
+        chromeBackgroundColor: theme === "dark" ? "#0f1a2b" : "#f1f5f9",
+        headerBackgroundColor: theme === "dark" ? "#0b1526" : "#f1f5f9",
+        headerTextColor: theme === "dark" ? "#8ea3bd" : "#475569",
+        borderColor: theme === "dark" ? "#1c2a3f" : "#cbd5e1",
+        accentColor: theme === "dark" ? "#34d399" : "#059669",
+        browserColorScheme: theme,
+        rowHoverColor: theme === "dark" ? "#132033" : "#f1f5f9",
+        oddRowBackgroundColor: theme === "dark" ? "#0c1626" : "#f8fafc",
+        selectedRowBackgroundColor: theme === "dark" ? "#16324a" : "#d1fae5",
+        headerFontWeight: 600,
+        fontFamily: "var(--font-geist-sans), system-ui, sans-serif",
+      }),
+    [theme],
+  );
 
   useEffect(() => {
     followLiveRef.current = followLive;
@@ -384,8 +389,7 @@ export default function SecurityDashboard() {
         records: TelemetryRecord[];
       };
       setConnection("CONNECTED");
-      setRecords((current) => mergeRecords(current, data.records ?? []));
-      setLastUpdated(new Date().toLocaleTimeString());
+      ingest(data.records ?? []);
     });
 
     source.addEventListener("telemetry", (event) => {
@@ -573,7 +577,7 @@ export default function SecurityDashboard() {
         : "border-rose-400/30 bg-rose-400/10 text-rose-300";
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#060b14] text-slate-200">
+    <main className="theme-dark-interface relative min-h-screen overflow-x-hidden bg-background text-foreground">
       {/* Ambient background */}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.14),_transparent_55%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_rgba(56,189,248,0.08),_transparent_50%)]" />

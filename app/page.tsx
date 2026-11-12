@@ -23,7 +23,7 @@ const FEATURES = [
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-[#070d18] text-slate-200">
+    <main className="theme-dark-interface min-h-screen bg-background text-foreground">
       <div className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[28rem] bg-[radial-gradient(ellipse_at_top,_rgba(52,211,153,0.14),_transparent_65%)]" />
 
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
