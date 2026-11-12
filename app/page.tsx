@@ -4,7 +4,7 @@ const FEATURES = [
   {
     tag: "01",
     title: "Registry-first checks",
-    body: "Every payee is matched against a verified merchant registry before the payment rail is touched. Unknown payees do not get the benefit of the doubt.",
+    body: "Unknown payees get a WARN and the customer decides. Look-alikes and wrong domains are blocked.",
     accent: "text-emerald-300",
   },
   {
