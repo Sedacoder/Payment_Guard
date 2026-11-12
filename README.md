@@ -2,7 +2,7 @@
 
 Payment Guard is an in-flight runtime transaction firewall designed to hook directly into network transaction streams. It evaluates transaction risk using localized database tool parameters and enforces zero-trust access control checks before digital assets leave user custody.
 
-Rather than relying on asynchronous chat interfaces or post-facto fraud alerts, Payment Guard embeds a Large Language Model (LLM) directly into production infrastructure pipelines as an inline risk sentinel utilizing Model Context Protocol (MCP) toolchains.
+Rather than relying on asynchronous chat interfaces or post-facto fraud alerts, Payment Guard embeds a Large Language Model (LLM) directly into production infrastructure pipelines as an inline risk sentinel that uses Claude tool calling. The AI advises, and a deterministic rule engine has the final say.
 
 ---
 
@@ -28,7 +28,7 @@ Payment Guard introduces an autonomous security layer positioned between order i
                                                    ( 2. Intercept Payload )
                                                              ▼
 [ Target Payment Rail ] <──( 4. Execute / Block )─── [ Inline Security Sentinel ]
-  (e.g., PayPal Engine)                                (LLM + MCP Toolchain)
+  (e.g., PayPal Engine)                                (Rule engine + Claude advisor)
                                                              │
                                                    ( 3. Database Context )
                                                              ▼
@@ -39,7 +39,7 @@ Payment Guard introduces an autonomous security layer positioned between order i
 Transactions are intercepted at the server API layer (`/api/create-order` and `/api/capture-order`). The application halts standard payment capture routines while passing incoming payload metadata to the security agent.
 
 ### 2. Zero-Trust Autonomous Risk Classification
-The AI agent operates as an immutable risk sentinel. Using strict tool calling (via MCP), the engine checks payee credentials, domain signatures, and transaction metadata against verified relational records.
+The AI agent operates as an immutable risk sentinel. Using Claude tool calling, the AI advisor checks payee credentials, domain signatures, and transaction metadata against verified relational records.
 
 The sentinel enforces strict payload output contracts, returning one of three explicit system verdicts:
 - `ALLOW`: Payload passes all contextual risk metrics. The server proceeds with payment capture.
@@ -61,7 +61,7 @@ The administrative engine incorporates an enterprise telemetry dashboard powered
 
 - **Next.js API Infrastructure:** Handles server-side transaction routes, PayPal webhook signature verification, and standard rail bindings.
 - **Supabase Backend:** Stores verified commercial identity registries, historical risk vectors, and immutable audit logs.
-- **Model Context Protocol (MCP) Agent Layer:** Executes structural zero-ops runtime checks against payment payloads.
+- **Claude Tool-Calling Agent Layer:** The AI advises using read-only registry lookups; the deterministic rule engine has the final say, and the stricter verdict wins.
 - **AG Grid Telemetry Engine:** Provides high-throughput monitoring and dynamic threat visualization for merchant operations.
 
 ---
@@ -146,7 +146,7 @@ All variables are optional for the mock demo. See `.env.example`.
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Absolute base for PayPal return/cancel URLs and QR links. |
 | `PAYMENT_RAIL` | `mock` | Set to `paypal` to use the PayPal Sandbox adapter. |
 | `ANTHROPIC_API_KEY` | unset | Enables the AI advisory pass. Without it, the rule engine runs alone. |
-| `ANTHROPIC_MODEL` | `claude-sonnet-4-5` | Model used for advisory checks. |
+| `ANTHROPIC_MODEL` | `claude-sonnet-5-5` | Model used for advisory checks. |
 | `PAYMENT_GUARD_AI` | unset | Set to `off` to force rules-only mode. |
 | `PAYPAL_CLIENT_ID` | unset | Required for `PAYMENT_RAIL=paypal`. |
 | `PAYPAL_CLIENT_SECRET` | unset | Required for `PAYMENT_RAIL=paypal`. |
