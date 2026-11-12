@@ -300,7 +300,7 @@ export default function PaymentTerminalPage() {
               </div>
               <div>
                 <label htmlFor="amount" className="text-xs font-semibold text-slate-600">
-                  Amount (KES)
+                  Amount (USD)
                 </label>
                 <input
                   id="amount"
